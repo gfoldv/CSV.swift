@@ -19,6 +19,15 @@ open class CSVRowDecoder {
         /// Decode the `Bool` as a custom value decoded by the given closure.
         case custom((_ value: String) throws -> Bool)
     }
+    
+    /// The strategy to use for decoding `Double` values.
+    public enum DoubleDecodingStrategy {
+        /// Decode the `Double` using default initializer.
+        case `default`
+
+        /// Decode the `Double` as a string parsed by the given formatter.
+        case formatted(NumberFormatter)
+    }
 
     /// The strategy to use for decoding `String` values.
     @available(*, deprecated, renamed: "NilDecodingStrategy")
@@ -143,6 +152,9 @@ open class CSVRowDecoder {
 
     /// The strategy to use in decoding bools. Defaults to `.default`.
     open var boolDecodingStrategy: BoolDecodingStrategy = .default
+    
+    /// The strategy to use in decoding doubles. Defaults to `.default`.
+    open var doubleDecodingStrategy: DoubleDecodingStrategy = .default
 
     /// The strategy to use in decoding strings. Defaults to `.default`.
     @available(*, deprecated, renamed: "nilDecodingStrategy")
@@ -180,6 +192,7 @@ open class CSVRowDecoder {
     /// Options set on the top-level encoder to pass down the decoding hierarchy.
     fileprivate struct _Options {
         let boolDecodingStrategy: BoolDecodingStrategy
+        let doubleDecodingStrategy: DoubleDecodingStrategy
         let dateDecodingStrategy: DateDecodingStrategy
         let dataDecodingStrategy: DataDecodingStrategy
         let keyDecodingStrategy: KeyDecodingStrategy
@@ -190,6 +203,7 @@ open class CSVRowDecoder {
     /// The options set on the top-level decoder.
     fileprivate var options: _Options {
         return _Options(boolDecodingStrategy: boolDecodingStrategy,
+                        doubleDecodingStrategy: doubleDecodingStrategy,
                         dateDecodingStrategy: dateDecodingStrategy,
                         dataDecodingStrategy: dataDecodingStrategy,
                         keyDecodingStrategy: keyDecodingStrategy,
@@ -792,11 +806,21 @@ extension _CSVRowDecoder {
 
     fileprivate func unbox(_ value: String, as type: Double.Type) throws -> Double? {
         if _isNil(value) { return nil }
+        
+        
+        switch self.options.doubleDecodingStrategy {
+        case .default:
+            guard let double = Double(value) else {
+                throw self._typeMismatch(at: self.codingPath, expectation: type, reality: value)
+            }
+            return double
 
-        guard let double = Double(value) else {
-            throw self._typeMismatch(at: self.codingPath, expectation: type, reality: value)
+        case .formatted(let formatter):
+            guard let double = formatter.number(from: value) else {
+                throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: self.codingPath, debugDescription: "Double string does not match format expected by formatter."))
+            }
+            return double.doubleValue
         }
-        return double
     }
 
     fileprivate func unbox(_ value: String, as type: String.Type) throws -> String? {
